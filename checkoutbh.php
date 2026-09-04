@@ -13,11 +13,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Database configuration
-$host = "localhost";
-$username = "webuser";
-$password = "password123";
-$database = "user_auth";
+// Database configuration - .env (local) ya Render ke environment variables se load
+$envPath = __DIR__ . '/.env';
+if (file_exists($envPath)) {
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || strpos($line, '#') === 0) continue; // comments/blank skip
+        list($key, $value) = array_pad(explode('=', $line, 2), 2, '');
+        $key = trim($key);
+        $value = trim($value);
+        if ($key !== '' && getenv($key) === false) {
+            putenv("$key=$value");
+        }
+    }
+}
+
+$host = getenv('DB_HOST') ?: 'localhost';
+$username = getenv('DB_USER') ?: '';
+$password = getenv('DB_PASS') ?: '';
+$database = getenv('DB_NAME') ?: '';
 
 // Database connection
 $conn = new mysqli($host, $username, $password, $database);
@@ -27,6 +42,50 @@ if ($conn->connect_error) {
         "success" => false,
         "error" => "Database connection failed"
     ]);
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+
+    $user_email = $_GET['email'] ?? '';
+
+    if (empty($user_email)) {
+        echo json_encode([
+            "success" => false,
+            "error" => "Email is required"
+        ]);
+        exit();
+    }
+    // my order update section
+    $query = "SELECT * FROM billing_details WHERE user_email = ? ORDER BY created_at DESC";
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("s", $user_email);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $orders = [];
+    while ($row = $result->fetch_assoc()) {
+        $orders[] = [
+            "_id" => $row['id'],
+            "orderId" => $row['order_id'],
+            "phone" => $row['phone'],
+            "address" => $row['address'],
+            "city" => $row['city'],
+            "pincode" => $row['pincode'],
+            "status" => $row['order_status'],
+            "totalAmount" => $row['total_amount'],
+            "createdAt" => $row['created_at'],
+            "items" => json_decode($row['order_items'])
+        ];
+    }
+
+    echo json_encode([
+        "success" => true,
+        "orders" => $orders
+    ]);
+
+    $stmt->close();
+    $conn->close();
     exit();
 }
 
