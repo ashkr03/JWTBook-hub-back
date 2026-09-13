@@ -30,7 +30,6 @@ function verifyToken() {
         exit();
     }
 
-    $token = str_replace('Bearer ', '', $authHeader);
 
     try {
         $decoded = JWT::decode($token, new Key($secret_key, 'HS256'));
