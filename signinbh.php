@@ -1,7 +1,5 @@
 <?php
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 $allowedOrigins = ['http://localhost:5173', 'https://jwtbookhub.netlify.app'];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
