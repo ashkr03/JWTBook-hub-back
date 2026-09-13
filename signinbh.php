@@ -209,6 +209,15 @@ if (password_verify($userPassword, $user["password"])) {
         'httponly' => true,
         'samesite' => $isProd ? 'None' : 'Lax'
     ]);
+
+    echo json_encode([
+        "success" => true,
+        "message" => "Login successful",
+        "name" => $user["name"],
+        "email" => $user["email"],
+        
+    ]);
+
 } else {
     echo json_encode([
         "success" => false,
