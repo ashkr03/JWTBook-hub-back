@@ -1,11 +1,18 @@
 <?php
-// checkout.php - Save billing and order details to database
+
+$allowedOrigins = ['http://localhost:5173', 'https://jwtbookhub.netlify.app'];
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowedOrigins)) {
+    header("Access-Control-Allow-Origin: $origin");
+}
 
 // CORS headers
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Content-Type: application/json");
+header("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");   
+header("Content-Type: application/json; charset=UTF-8");
+
+
 
 // Preflight request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -29,6 +36,8 @@ if (file_exists($envPath)) {
     }
 }
 
+require_once __DIR__ . '/jwt_helper.php'; // for jwt verification
+
 $host = getenv('DB_HOST') ?: 'localhost';
 $username = getenv('DB_USER') ?: '';
 $password = getenv('DB_PASS') ?: '';
@@ -45,9 +54,11 @@ if ($conn->connect_error) {
     exit();
 }
 
+// get request method
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
-    $user_email = $_GET['email'] ?? '';
+     $user = verifyToken();              // <-- ADD jwt
+    $user_email = $user->email;         // <-- REPLACE (pehle: $_GET['email'] ?? '')
 
     if (empty($user_email)) {
         echo json_encode([
@@ -92,7 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 // POST request
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
+    $user = verifyToken();                    // <-- ADD jwt verification
+    
     $input = json_decode(file_get_contents('php://input'), true);
+    $user_email = $user->email;   // <-- REPLACE (pehle: $input['user_email'] ?? '')
     
     // Extract data
     $order_id = $input['order_id'] ?? 0;
@@ -199,8 +213,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
     }
     
+     $stmt->close();
+     $conn->close();
+    exit();
+}
+  
+// PUT request - edit phone/address (when order still Pending)
+
+if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+
+    $user = verifyToken();   // login check
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    $id = $input['id'] ?? 0;
+    $phone = trim($input['phone'] ?? '');
+    $address = trim($input['address'] ?? '');
+
+    if (empty($id) || empty($phone) || empty($address)) {
+        echo json_encode(["success" => false, "error" => "All fields required"]);
+        exit();
+    }
+
+    if (!preg_match('/^[0-9]{10}$/', $phone)) {
+        echo json_encode(["success" => false, "error" => "Invalid phone number"]);
+        exit();
+    }
+
+    // sirf apna order edit kar sake, aur sirf jab tak Pending hai
+    $update_query = "UPDATE billing_details 
+                      SET phone = ?, address = ? 
+                      WHERE id = ? AND user_email = ? AND order_status = 'Pending'";
+    $stmt = $conn->prepare($update_query);
+    $stmt->bind_param("ssis", $phone, $address, $id, $user->email);
+
+    if ($stmt->execute()) {
+        if ($stmt->affected_rows > 0) {
+            echo json_encode(["success" => true, "message" => "Order updated successfully"]);
+        } else {
+            echo json_encode(["success" => false, "error" => "Order not found or already shipped"]);
+        }
+    } else {
+        echo json_encode(["success" => false, "error" => "Update failed: " . $stmt->error]);
+    }
+
     $stmt->close();
-} else {
+    $conn->close();
+    exit();
+}
+
+  else {
     echo json_encode([
         "success" => false,
         "error" => "Invalid request method"

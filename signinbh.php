@@ -1,10 +1,17 @@
 <?php
 
+$allowedOrigins = ['http://localhost:5173', 'https://jwtbookhub.netlify.app'];
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowedOrigins)) {
+    header("Access-Control-Allow-Origin: $origin");
+}
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json; charset=UTF-8");
+
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -34,6 +41,8 @@ if (file_exists($envPath)) {
         }
     }
 }
+
+require_once __DIR__ . '/jwt_helper.php'; // jwt k liye
 
 $servername = getenv('DB_HOST') ?: 'localhost';
 $username = getenv('DB_USER') ?: '';
@@ -135,11 +144,13 @@ if (!empty($name)) {
     $stmt->bind_param("sss", $name, $email, $hashedPassword);
 
     if ($stmt->execute()) {
+        $token = generateToken($conn->insert_id, $email, $name);   // <-- ADD for jwt
         echo json_encode([
             "success" => true,
             "message" => "Account created successfully",
             "name" => $name,
-            "email" => $email
+            "email" => $email,
+            "token" => $token  // added token in response(jwt)
         ]);
     } else {
         echo json_encode([
@@ -187,11 +198,15 @@ if ($result->num_rows === 0) {
 $user = $result->fetch_assoc();
 
 if (password_verify($userPassword, $user["password"])) {
-    echo json_encode([
-        "success" => true,
-        "message" => "Login successful",
-        "name" => $user["name"],
-        "email" => $user["email"]
+    $token = generateToken($user["id"], $user["email"], $user["name"]);  // <-- ADD jwt token generation
+     $isProd = ($_SERVER['HTTP_HOST'] ?? '') !== 'localhost';   // <-- ADD jwt cookie secure flag
+
+    setcookie("token", $token, [                                 // <-- ADD jwt cookie
+        'expires' => time() + 86400,
+        'path' => '/',
+        'secure' => $isProd,
+        'httponly' => true,
+        'samesite' => $isProd ? 'None' : 'Lax'
     ]);
 } else {
     echo json_encode([
